@@ -7,14 +7,20 @@ from .unit import GameUnit
 from .game_map import GameMap
 
 def is_stationary(unit_type):
+    """
+        Args:
+            unit_type: A unit type
+        
+        Returns: 
+            Boolean, True if the unit is stationary, False otherwise.
+    """
     return unit_type in FIREWALL_TYPES
-
 
 class GameState:
     """Represents the entire gamestate for a given turn
     Provides methods related to resources and unit deployment
 
-    Attributes:
+    Attributes :
         * UNIT_TYPE_TO_INDEX (dict): Maps a unit to a corresponding index
         * FILTER (str): A constant representing the filter unit
         * ENCRYPTOR (str): A constant representing the encryptor unit
@@ -26,8 +32,8 @@ class GameState:
 
         * ARENA_SIZE (int): The size of the arena
         * HALF_ARENA (int): Half the size of the arena
-        * BITS (int): A constant representing the bits resource
-        * CORES (int): A constant representing the cores resource
+        * BITS (int): A constant representing the bits resource, used in the get_resource function
+        * CORES (int): A constant representing the cores resource, used in the get_resource function
          
         * game_map (:obj: GameMap): The current GameMap. To retrieve a list of GameUnits at a location, use game_map[x, y]
         * turn_number (int): The current turn number. Starts at 0.
@@ -155,8 +161,7 @@ class GameState:
 
     def submit_turn(self):
         """Submit and end your turn.
-        Must be called at the end of your turn or the algo will hang.
-        
+            Must be called at the end of your turn or the algo will hang.
         """
         build_string = json.dumps(self._build_stack)
         deploy_string = json.dumps(self._deploy_stack)
@@ -167,8 +172,8 @@ class GameState:
         """Gets a players resources
 
         Args:
-            * resource_type: self.CORES or self.BITS
-            * player_index: The index corresponding to the player whos resources you are querying, 0 for you 1 for the enemy
+            resource_type: BITS (0) or CORES (1)
+            player_index: The index corresponding to the player whos resources you are querying, 0 for you 1 for the enemy
 
         Returns:
             The number of the given resource the given player controls
@@ -178,7 +183,7 @@ class GameState:
             self._invalid_player_index(player_index)
             return
         if not resource_type == self.BITS and not resource_type == self.CORES:
-            self.warn("Invalid resource_type '{}'. Please use game_state.BITS or game_state.CORES".format(resource_type))
+            self.warn("Invalid resource_type '{}'. Please use BITS (0) or CORES (1)".format(resource_type))
             return
 
         if resource_type == self.BITS:
@@ -192,7 +197,7 @@ class GameState:
         """The number of units of a given type we can afford
 
         Args:
-            * unit_type: A unit type, PING, FILTER, etc.
+            unit_type: A unit type, PING, FILTER, etc.
 
         Returns:
             The number of units affordable of the given unit_type.
@@ -211,9 +216,9 @@ class GameState:
         """Predicts the number of bits we will have on a future turn
 
         Args:
-            * turns_in_future: The number of turns in the future we want to look forward to predict
-            * player_index: The player whos bits we are tracking
-            * current_bits: If we pass a value here, we will use that value instead of the current bits of the given player.
+            turns_in_future: The number of turns in the future we want to look forward to predict
+            player_index: The player whose bits we are tracking
+            current_bits: If we pass a value here, we will use that value instead of the current bits of the given player.
 
         Returns:
             The number of bits the given player will have after the given number of turns
@@ -231,7 +236,7 @@ class GameState:
         for increment in range(1, turns_in_future + 1):
             current_turn = self.turn_number + increment
             bits *= (1 - self.config["resources"]["bitDecayPerRound"])
-            bits_gained = self.config["resources"]["bitsPerRound"] + (current_turn // self.config["resources"]["turnIntervalForBitSchedule"])
+            bits_gained = self.config["resources"]["bitsPerRound"] + (self.config["resources"]["bitGrowthRate"] * (current_turn // self.config["resources"]["turnIntervalForBitSchedule"]))
             bits += bits_gained
             bits = round(bits, 1)
         return bits
@@ -240,7 +245,7 @@ class GameState:
         """Gets the cost of a unit based on its type
 
         Args:
-            * unit_type: The units type
+            unit_type: The units type
 
         Returns:
             The units cost
@@ -253,7 +258,7 @@ class GameState:
         unit_def = self.config["unitInformation"][UNIT_TYPE_TO_INDEX[unit_type]]
         return unit_def.get('cost')
 
-    def can_spawn(self, unit_type, location, num=1, warnings = False):
+    def can_spawn(self, unit_type, location, num=1):
         """Check if we can spawn a unit at a location. 
 
         To units, we need to be able to afford them, and the location must be
@@ -261,9 +266,9 @@ class GameState:
         and on an edge if the unit is information.
 
         Args:
-            * unit_type: The type of the unit
-            * location: The location we want to spawn the unit
-            * num: The number of units we want to spawn
+            unit_type: The type of the unit
+            location: The location we want to spawn the unit
+            num: The number of units we want to spawn
 
         Returns:
             True if we can spawn the unit(s)
@@ -291,10 +296,11 @@ class GameState:
             if blocked:
                 fail_reason = fail_reason + " Location is blocked."
             if not correct_territory:
-                fail_reason = fail_reason + " Location in enemy terretory."
+                fail_reason = fail_reason + " Location in enemy territory."
             if not (stationary or on_edge):
                 fail_reason = fail_reason + " Information units must be deployed on the edge."
-            self.warn("Could not spawn {} at location {}.{}".format(unit_type, location, fail_reason))
+            if len(fail_reason) > 0:
+                self.warn("Could not spawn {} at location {}.{}".format(unit_type, location, fail_reason))
 
         return (affordable and correct_territory and not blocked and
                 (stationary or on_edge) and
@@ -304,9 +310,9 @@ class GameState:
         """Attempts to spawn new units with the type given in the given locations.
 
         Args:
-            * unit_type: The type of unit we want to spawn
-            * locations: A single location or list of locations to spawn units at
-            * num: The number of units of unit_type to deploy at the given location(s)
+            unit_type: The type of unit we want to spawn
+            locations: A single location or list of locations to spawn units at
+            num: The number of units of unit_type to deploy at the given location(s)
 
         Returns:
             The number of units successfully spawned
@@ -324,7 +330,7 @@ class GameState:
         spawned_units = 0
         for location in locations:
             for i in range(num):
-                if self.can_spawn(unit_type, location, 1, True):
+                if self.can_spawn(unit_type, location, 1):
                     x, y = map(int, location)
                     cost = self.type_cost(unit_type)
                     resource_type = self.__resource_required(unit_type)
@@ -341,7 +347,7 @@ class GameState:
         """Attempts to remove existing friendly firewalls in the given locations.
 
         Args:
-            * locations: A location or list of locations we want to remove firewalls from
+            locations: A location or list of locations we want to remove firewalls from
 
         Returns:
             The number of firewalls successfully flagged for removal
@@ -359,12 +365,35 @@ class GameState:
                 self.warn("Could not remove a unit from {}. Location has no firewall or is enemy territory.".format(location))
         return removed_units
 
-    def find_path_to_edge(self, start_location, target_edge):
+    def get_target_edge(self, start_location):
+        """Gets the target edge given a starting location
+
+        Args:
+            start_location: The location of a hypothetical unit
+
+        Returns: 
+            The edge this unit would attempt to reach if it was spawned at this location
+        """
+
+        left = start_location[0] < self.HALF_ARENA
+        bottom = start_location[1] < self.HALF_ARENA
+        right = not(left)
+        top = not(bottom)
+        if left and bottom:
+            return self.game_map.TOP_RIGHT
+        elif left and top:
+            return self.game_map.BOTTOM_RIGHT
+        elif right and bottom:
+            return self.game_map.TOP_LEFT
+        elif right and top:
+            return self.game_map.BOTTOM_LEFT
+
+    def find_path_to_edge(self, start_location, target_edge=None):
         """Gets the path a unit at a given location would take
 
         Args:
-            * start_location: The location of a hypothetical unit
-            * target_edge: The edge the unit wants to reach. game_map.TOP_LEFT, game_map.BOTTOM_RIGHT, etc.
+            start_location: The location of a hypothetical unit
+            target_edge: The edge the unit wants to reach. game_map.TOP_LEFT, game_map.BOTTOM_RIGHT, etc. Induced from start_location if None.
 
         Returns:
             A list of locations corresponding to the path the unit would take 
@@ -374,6 +403,10 @@ class GameState:
         if self.contains_stationary_unit(start_location):
             self.warn("Attempted to perform pathing from blocked starting location {}".format(start_location))
             return
+
+        if target_edge is None:
+            target_edge = self.get_target_edge(start_location)
+
         end_points = self.game_map.get_edge_locations(target_edge)
         return self._shortest_path_finder.navigate_multiple_endpoints(start_location, end_points, self)
 
@@ -381,19 +414,25 @@ class GameState:
         """Check if a location is blocked
 
         Args:
-            * location: The location to check
+            location: The location to check
 
         Returns:
             True if there is a stationary unit at the location, False otherwise
             
         """
+        if not self.game_map.in_arena_bounds(location):
+            self.warn('Checked for stationary unit outside of arena bounds')
+            return False
         x, y = map(int, location)
-        for unit in self.game_map[x, y]:
+        for unit in self.game_map[x,y]:
             if unit.stationary:
                 return unit
         return False
 
     def warn(self, message):
+        """ Used internally by game_state to print warnings
+        """
+
         if(self.enable_warnings):
             debug_write(message)
 
@@ -401,10 +440,119 @@ class GameState:
         """Suppress all warnings
 
         Args: 
-            * suppress: If true, disable warnings. If false, enable warnings.
+            suppress: If true, disable warnings. If false, enable warnings.
             
         """
 
         self.enable_warnings = not suppress
         self.game_map.enable_warnings = not suppress
 
+    def get_target(self, attacking_unit):
+        """Returns target of given unit based on current map of the game board. 
+        A Unit can often have many other units in range, and Units that attack do so once each frame.
+
+        Their targeting priority is as follows:
+            Infantry > Nearest Unit > Lowest Health > Lowest Y position > Closest to edge (Highest distance of X from the boards center, 13.5)
+
+        Args:
+            attacking_unit: A GameUnit
+
+        Returns:
+            The GameUnit this unit would choose to attack.
+
+        """
+
+        if not isinstance(attacking_unit, GameUnit):
+            self.warn("Passed a {} to get_target as attacking_unit. Expected a GameUnit.".format(type(attacking_unit)))
+            return
+
+        attacker_location = [attacking_unit.x, attacking_unit.y]
+        possible_locations = self.game_map.get_locations_in_range(attacker_location, attacking_unit.range)
+        target = None
+        target_stationary = True
+        target_distance = sys.maxsize
+        target_health = sys.maxsize
+        target_y = self.ARENA_SIZE
+        target_x_distance = 0
+
+        for location in possible_locations:
+            for unit in self.game_map[location]:
+                """
+                NOTE: scrambler units cannot attack firewalls so skip them if unit is firewall
+                """
+                if unit.player_index == attacking_unit.player_index or (attacking_unit.unit_type == SCRAMBLER and is_stationary(unit.unit_type)):
+                    continue
+
+                new_target = False
+                unit_stationary = unit.stationary
+                unit_distance = self.game_map.distance_between_locations(location, [attacking_unit.x, attacking_unit.y])
+                unit_health = unit.health
+                unit_y = unit.y
+                unit_x_distance = abs(self.HALF_ARENA - 0.5 - unit.x)
+
+                if target_stationary and not unit_stationary:
+                    new_target = True
+                elif not target_stationary and unit_stationary:
+                    continue
+                
+                if target_distance > unit_distance:
+                    new_target = True
+                elif target_distance < unit_distance and not new_target:
+                    continue
+
+                if target_health > unit_health:
+                    new_target = True
+                elif target_health < unit_health and not new_target:
+                    continue
+
+                # Compare height heuristic relative to attacking unit's player index
+                if attacking_unit.player_index == 0:
+                    if target_y > unit_y:
+                        new_target = True
+                    elif target_y < unit_y and not new_target:
+                        continue
+                else:
+                    if target_y < unit_y:
+                        new_target = True
+                    elif target_y > unit_y and not new_target:
+                        continue
+
+                if target_x_distance < unit_x_distance:
+                    new_target = True
+                
+                if new_target:
+                    target = unit
+                    target_stationary = unit_stationary
+                    target_distance = unit_distance
+                    target_health = unit_health
+                    target_y = unit_y
+                    target_x_distance = unit_x_distance
+        return target
+
+    def get_attackers(self, location, player_index):
+        """Gets the destructors threatening a given location
+
+        Args:
+            location: The location of a hypothetical defender
+            player_index: The index corresponding to the defending player, 0 for you 1 for the enemy
+
+        Returns:
+            A list of destructors that would attack a unit controlled by the given player at the given location
+
+        """
+
+        if not player_index == 0 and not player_index == 1:
+            self._invalid_player_index(player_index)
+        if not self.game_map.in_arena_bounds(location):
+            self.warn("Location {} is not in the arena bounds.".format(location))
+
+        attackers = []
+        """
+        Get locations in the range of DESTRUCTOR units
+        """
+        possible_locations= self.game_map.get_locations_in_range(location, self.config["unitInformation"][UNIT_TYPE_TO_INDEX[DESTRUCTOR]]["range"])
+        for location in possible_locations:
+            for unit in self.game_map[location]:
+                if unit.unit_type == DESTRUCTOR and unit.player_index != player_index:
+                    attackers.append(unit)
+        return attackers
